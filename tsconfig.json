@@ -1,0 +1,1 @@
+{"extends":"./apps/web/tsconfig.json","compilerOptions":{"incremental":false,"allowImportingTsExtensions":true,"types":["node"]},"include":["packages/**/*.ts","apps/mcp-server/**/*.ts"],"exclude":["node_modules",".phase0"]}

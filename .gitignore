@@ -1,0 +1,19 @@
+.phase0/
+node_modules/
+.next/
+*.tsbuildinfo
+.env*
+!.env.example
+*.db
+*.db-*
+.test-data/
+test-results/
+.data/
+*.sqlite
+*.sqlite-*
+# Imported reading material and local exports must stay on this computer.
+*.epub
+*.pdf
+*.mobi
+*.azw*
+*.backup.json

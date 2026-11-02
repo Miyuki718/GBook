@@ -1,0 +1,9 @@
+# Copy this entry to your Codex project/user configuration, replacing the paths.
+# Start read-only; set GBOOK_MCP_WRITE="1" only when you want note-writing tools.
+[mcp_servers.gbook]
+command = "node"
+args = ["C:/path/to/GBook/apps/mcp-server/src/index.ts"]
+cwd = "C:/path/to/GBook"
+[mcp_servers.gbook.env]
+GBOOK_ROOT = "C:/path/to/GBook"
+GBOOK_MCP_WRITE = "0"

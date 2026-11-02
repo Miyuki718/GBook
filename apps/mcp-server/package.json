@@ -1,0 +1,1 @@
+{"name":"@gbook/mcp-server","version":"1.0.0","private":true,"type":"module","dependencies":{"@gbook/core":"*","@modelcontextprotocol/sdk":"1.32.2","zod":"4.6.7"}}

@@ -1,0 +1,1 @@
+{"name":"@gbook/core","version":"1.0.0","private":true,"type":"module","exports":{".":"./src/index.ts","./types":"./src/types.ts","./import":"./src/import.ts","./limits":"./src/limits.ts"},"dependencies":{"better-sqlite3":"13.0.3","drizzle-orm":"0.45.4","fast-xml-parser":"5.11.2","fflate":"0.8.3","zod":"4.6.7"},"devDependencies":{"@types/better-sqlite3":"9.6.0"}}

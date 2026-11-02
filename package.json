@@ -1,0 +1,25 @@
+{
+  "name": "gbook",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "node --use-env-proxy scripts/web.mjs dev",
+    "build": "npm run build -w @gbook/web",
+    "start": "node --use-env-proxy scripts/web.mjs start",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck -w @gbook/web",
+    "test": "node --test tests/*.test.mjs && npm run test -w @gbook/web",
+    "mcp": "node apps/mcp-server/src/index.ts",
+    "db:migrate": "node scripts/migrate.mjs",
+    "test:e2e": "node tests/production.mjs",
+    "mcp:config": "node scripts/mcp-config.mjs",
+    "auth:migrate-phase0":"node --use-env-proxy scripts/migrate-auth.mjs",
+    "test:live-ai":"node scripts/live-ai-check.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

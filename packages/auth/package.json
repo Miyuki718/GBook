@@ -1,0 +1,1 @@
+{"name":"@gbook/auth","version":"1.0.0","private":true,"type":"module","exports":"./src/index.ts","dependencies":{"@gbook/core":"*","jose":"6.1.0","openai":"7.21.0","proper-lockfile":"4.1.2"}}
