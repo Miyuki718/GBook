@@ -31,6 +31,7 @@ export function segments(
   text: string,
   base: number,
   ranges: (Anchor & { id: string })[],
+  cuts: number[] = [],
 ) {
   const end = base + text.length;
   const active = ranges.filter((r) => r.end > base && r.start < end);
@@ -38,6 +39,7 @@ export function segments(
     ...new Set([
       base,
       end,
+      ...cuts.filter((cut) => cut > base && cut < end),
       ...active.flatMap((r) => [Math.max(base, r.start), Math.min(end, r.end)]),
     ]),
   ].sort((a, b) => a - b);

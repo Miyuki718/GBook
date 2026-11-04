@@ -466,6 +466,121 @@ button {
 }
 .reader-shell {
   min-height: 100vh;
+  --reader-panel: #fffdf8;
+  --reader-soft: #f0ece3;
+  --reader-active: #eee7f0;
+  --reader-mark: #ece1f0;
+  --reader-contrast: #fff;
+  background: var(--paper);
+  color: var(--ink);
+}
+.reader-shell[data-theme="day"] {
+  --paper: #fff;
+  --reader-panel: #f9f9fb;
+  --reader-soft: #f0f0f4;
+}
+.reader-shell[data-theme="night"] {
+  color-scheme: dark;
+  --paper: #17191f;
+  --ink: #e5e3e8;
+  --muted: #b1acba;
+  --purple: #d2b4f1;
+  --line: #3e3b48;
+  --reader-panel: #23252e;
+  --reader-soft: #2c2e39;
+  --reader-active: #3d304e;
+  --reader-mark: #513e64;
+  --reader-contrast: #23182e;
+}
+.reader-shell :is(.reader-top, .reader-bottom, .reader-theme) {
+  background: var(--paper);
+  color: var(--ink);
+}
+.reader-shell :is(.annotation-card, .annotation-dialog, .annotation-input, .follow-up,
+  .discussion select, .selection-toolbar, .toc-dialog) {
+  background: var(--reader-panel);
+  border-color: var(--line);
+  color: var(--ink);
+}
+.reader-shell :is(.session-notice, .message.user) { background: var(--reader-soft); }
+.reader-shell :is(.message, .icon-button:hover) { background: var(--reader-active); }
+.reader-shell :is(.rail-title, .chapter-nav button, .chapter-nav small, .chapter-kicker,
+  .chapter-intro, .session-notice, .quote-preview, .field-label, .dialog-header h2,
+  .dialog-footer small, .dialog-close, .annotation-card blockquote, .message small, .discussion > small) {
+  color: var(--muted);
+}
+.reader-shell .primary-button { color: var(--reader-contrast); }
+.reader-shell .primary-button:hover { background: var(--purple); filter: brightness(.92); }
+.reader-shell[data-theme="night"] .error-text { color: #ffaaa1; }
+.reader-shell .reading-text mark { background: var(--reader-mark); }
+.reader-shell[data-theme="night"] .reading-text *::selection { background: #58466a; }
+.chapter-nav {
+  position: sticky;
+  top: 72px;
+  align-self: start;
+  max-height: calc(100dvh - 112px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.toc-tools { display: flex; gap: 6px; margin-bottom: 8px; }
+.toc-tools input {
+  min-width: 0;
+  flex: 1;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 12px;
+}
+.reader-shell .toc-tools button {
+  width: auto;
+  padding: 5px 6px;
+  margin: 0;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--purple);
+}
+.toc-list {
+  position: relative;
+  max-height: min(55dvh, 460px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.toc-list button {
+  display: block;
+  width: 100%;
+  padding: 8px;
+  text-align: left;
+  border-radius: 5px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.reader-shell .toc-list button:is(.current, :hover) { background: var(--reader-active); color: var(--purple); }
+.toc-dialog {
+  inset: 0;
+  margin: auto;
+  width: min(440px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.toc-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.epub-illustration { margin: 1.25em 0; user-select: none; }
+.epub-illustration img {
+  display: block;
+  max-width: 100%;
+  max-height: 80dvh;
+  height: auto;
+  object-fit: contain;
+  margin-inline: auto;
+}
+.reading-text .epub-inline-image {
+  display: inline-block;
+  max-width: 100%;
+  max-height: 2.4em;
+  width: auto;
+  vertical-align: text-bottom;
+  user-select: none;
 }
 .reader-top {
   height: 72px;

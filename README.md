@@ -25,7 +25,8 @@ powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/create-des
 ## 已实现
 
 - 书架：搜索、编辑书名/作者/简介、移出与恢复。
-- 导入：TXT、Markdown、无 DRM 的 EPUB；UTF-8 与常见中文文本编码。
+- 导入：TXT、Markdown、无 DRM 的 EPUB；支持 EPUB 内嵌 PNG、JPEG、GIF、WebP 插图。
+- 阅读外观：日间、纸色与夜间主题，目录独立滚动，可筛选章节及定位当前章。
 - 阅读：目录、上下章、字号、书内搜索、位置恢复、书签、窄屏布局。
 - 批注：跨行/跨段高亮、重叠高亮、编辑、删除、全部批注搜索、跳回原文。
 - AI：ChatGPT OAuth、账户模型列表、Responses 流式回复、多轮追问、停止生成、讨论状态与历史持久化。
@@ -93,8 +94,10 @@ docs/                使用说明、架构、决策与验证记录
 
 ## 支持范围和许可证
 
-这是 Windows 本地单用户版本，不提供公网多用户、云同步、DRM 解密、PDF/OCR 或完整 EPUB 排版保真。EPUB 导入的是阅读文字，不执行其脚本、不加载外部资源。
-文件导入上限 100 MB，EPUB 解压总量上限 200 MB、单个条目上限 10 MB，解析后的正文 JSON 上限 1000 万字符；JSON 恢复上限 30 MB。图片不加载到文字阅读器。大书性能取决于章节大小，尚未进行百万字级压力测试。
+旧版导入的 EPUB 可在阅读页点「补充 EPUB 插图」，选择原文件。正文一致时保留原书籍、批注和阅读位置，并补充图片。JSON 备份包含文字及阅读记录，恢复后可用原 EPUB 补图。
+
+这是 Windows 本地单用户版本，不提供公网多用户、云同步、DRM 解密、PDF/OCR 或完整 EPUB 排版保真。阅读器只渲染提取的正文和受支持的本地图片。原书脚本、矢量 SVG 和远程资源不进入阅读页。
+文件导入上限 100 MB，EPUB 解压总量上限 200 MB、单个条目上限 10 MB，解析后的正文 JSON 上限 1000 万字符；JSON 恢复上限 30 MB。大书性能取决于章节大小。
 
 自写代码为 MIT；`packages/auth/vendor/siwc` 保留 OpenAI **Noncommercial License v1.0**，不能作为 MIT 重新授权。商业用途和 OpenAI 服务接入需单独核对。
 详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。源码仓库：[Miyuki718/GBook](https://github.com/Miyuki718/GBook)。GitHub Actions 执行严格类型、测试、构建及隔离 HTTP 检验；具体结果以仓库 Actions 为准。未远程部署。

@@ -3,7 +3,7 @@ import { posix } from "node:path";
 import { unzipSync, strFromU8 } from "fflate";
 import { XMLParser } from "fast-xml-parser";
 import { assert, DomainError } from "./index.ts";
-import type { Book, Chapter } from "./types.ts";
+import type { Book, Chapter, ImportedImage } from "./types.ts";
 import { IMPORT_FILE_LIMIT, EPUB_UNPACKED_LIMIT, EPUB_ENTRY_LIMIT, BOOK_TEXT_LIMIT } from "./limits.ts";
 function paragraphs(text: string) {
   return text
@@ -26,7 +26,21 @@ function decode(bytes: Uint8Array) {
     }
   }
 }
-export function importBook(filename: string, bytes: Uint8Array): Book {
+function imageMime(bytes: Uint8Array) {
+  const head = Buffer.from(bytes.subarray(0, 12));
+  if (head.subarray(0, 8).toString("hex") === "89504e470d0a1a0a") return "image/png";
+  if (head.subarray(0, 3).toString("hex") === "ffd8ff") return "image/jpeg";
+  if (/^GIF8[79]a$/.test(head.subarray(0, 6).toString("ascii"))) return "image/gif";
+  if (head.toString("ascii", 0, 4) === "RIFF" && head.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+}
+
+const decodeEntities = (value: string) => value.replace(
+  /&(amp|lt|gt|quot|apos|nbsp);/g,
+  (_, entity: string) =>
+    ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " })[entity] ?? "",
+);
+
+export function importBook(filename: string, bytes: Uint8Array, images?: ImportedImage[]): Book {
   assert(
     bytes.byteLength > 0 && bytes.byteLength <= IMPORT_FILE_LIMIT,
     "文件应为 1 字节至 100 MB",
@@ -58,7 +72,8 @@ export function importBook(filename: string, bytes: Uint8Array): Book {
             file.originalSize <= EPUB_ENTRY_LIMIT && size <= EPUB_UNPACKED_LIMIT,
             "EPUB 解压后过大",
           );
-          return /\.(xml|opf|xhtml|html|htm)$/i.test(file.name);
+          return /\.(xml|opf|xhtml|html|htm)$/i.test(file.name) ||
+            Boolean(images && /\.(png|jpe?g|gif|webp)$/i.test(file.name));
         },
       });
     } catch (e) {
@@ -94,10 +109,13 @@ export function importBook(filename: string, bytes: Uint8Array): Book {
       : [opf.spine?.itemref];
     const ordered = new XMLParser({
       preserveOrder: true,
-      ignoreAttributes: true,
+      ignoreAttributes: false,
       removeNSPrefix: true,
       processEntities: false,
     });
+    type PendingImage = Omit<ImportedImage, "chapterId">;
+    let pending: PendingImage[] = [];
+    let imageBytes = 0;
     for (const ref of refs) {
       const item = items.find((v) => v?.["@_id"] === ref?.["@_idref"]);
       if (!item || ref?.["@_linear"] === "no") continue;
@@ -114,36 +132,76 @@ export function importBook(filename: string, bytes: Uint8Array): Book {
       );
       assert(!path.startsWith("../"), "EPUB 路径越界");
       let output = "";
-      function walk(nodes: unknown) {
+      const chapterImages: { image: PendingImage; offset: number; insideText: boolean }[] = [];
+      function walk(nodes: unknown, imageOnly = false, insideText = false) {
         if (!Array.isArray(nodes)) return;
         for (const node of nodes) {
           for (const [tag, value] of Object.entries(
             node as Record<string, unknown>,
           )) {
-            if (["script", "style", "svg", "head"].includes(tag)) continue;
-            if (tag === "#text") output += String(value);
+            if ([":@", "script", "style", "head"].includes(tag)) continue;
+            if (tag === "img" || tag === "image") {
+              const attrs = (node as { ":@"?: Record<string, unknown> })[":@"];
+              const source = attrs?.["@_src"] ?? attrs?.["@_href"];
+              if (images && typeof source === "string") {
+                const relative = decodeURIComponent(decodeEntities(source.split(/[?#]/)[0]));
+                if (!relative.includes("\\") && !/^(?:\/|[a-z][a-z\d+.-]*:)/i.test(relative)) {
+                  const asset = posix.normalize(posix.join(posix.dirname(path), relative));
+                  const data = zip[asset];
+                  const mime = data instanceof Uint8Array ? imageMime(data) : undefined;
+                  if (mime) {
+                    imageBytes += data.length;
+                    assert(imageBytes <= EPUB_UNPACKED_LIMIT, "EPUB 引用的图片过多");
+                    chapterImages.push({ offset: output.length, insideText, image: {
+                      beforeParagraph: 0, inlineOffset: null,
+                      alt: decodeEntities(String(attrs?.["@_alt"] ?? "")).slice(0, 300), mime, bytes: data,
+                    } });
+                  }
+                }
+              }
+            } else if (tag === "#text") {
+              if (!imageOnly) output += String(value);
+            }
             else {
-              walk(value);
-              if (/^(p|div|h[1-6]|li|br|section)$/.test(tag)) output += "\n\n";
+              walk(value, imageOnly || tag === "svg", insideText || /^(p|li|h[1-6])$/.test(tag));
+              if (!imageOnly && /^(p|div|h[1-6]|li|br|section)$/.test(tag)) output += "\n\n";
             }
           }
         }
       }
       walk(ordered.parse(xml(path)));
-      output = output.replace(
-        /&(amp|lt|gt|quot|apos|nbsp);/g,
-        (_, e: string) =>
-          ({ amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " " })[
-            e
-          ] ?? "",
-      );
-      const p = paragraphs(output);
-      if (p.length)
+      const p = paragraphs(decodeEntities(output));
+      for (const { image, offset, insideText } of chapterImages) {
+        const before = decodeEntities(output.slice(0, offset)).replace(/\r\n?/g, "\n").replace(/\u0000/g, "");
+        const after = decodeEntities(output.slice(offset)).replace(/\r\n?/g, "\n");
+        const left = before.split(/\n\s*\n/).at(-1) ?? "";
+        const right = after.split(/\n\s*\n/)[0];
+        const count = paragraphs(before).length;
+        image.beforeParagraph = count;
+        if (insideText && (left.trim() || right.trim())) {
+          const index = left.trim() ? count - 1 : count;
+          if (p[index] !== undefined) {
+            image.beforeParagraph = index;
+            image.inlineOffset = Math.min(p[index].length, left.trimStart().length);
+          }
+        }
+        pending.push(image);
+      }
+      if (p.length) {
+        const chapterId = randomUUID();
         chapters.push({
-          id: randomUUID(),
+          id: chapterId,
           title: p[0].slice(0, 100),
           paragraphs: p,
         });
+        for (const image of pending) images?.push({ ...image, chapterId });
+        pending = [];
+      }
+    }
+    if (pending.length) {
+      if (!chapters.length) chapters.push({ id: randomUUID(), title: "插图", paragraphs: [""] });
+      const last = chapters[chapters.length - 1];
+      for (const image of pending) images?.push({ ...image, chapterId: last.id, beforeParagraph: last.paragraphs.length, inlineOffset: null });
     }
   } else {
     const text = decode(bytes);

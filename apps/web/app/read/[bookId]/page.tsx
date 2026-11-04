@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getLibrary, DomainError } from "@gbook/core";
+import { getLibrary } from "@gbook/core";
 import { ReaderGate } from "../../../components/reader-gate";
 export const dynamic = "force-dynamic";
 export default async function Page({
@@ -9,7 +9,8 @@ export default async function Page({
 }) {
   const { bookId } = await params;
   try {
-    return <ReaderGate book={getLibrary().book(bookId)} />;
+    const library = getLibrary();
+    return <ReaderGate book={library.book(bookId)} images={library.bookImages(bookId)} />;
   } catch (e) {
     if (e && typeof e === "object" && "code" in e && e.code === "not_found")
       notFound();

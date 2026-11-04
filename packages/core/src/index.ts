@@ -15,6 +15,8 @@ import type {
   Position,
   Bookmark,
   Snapshot,
+  BookImage,
+  ImportedImage,
 } from "./types.ts";
 export * from "./types.ts";
 export { dataDirectory } from "./paths.ts";
@@ -104,6 +106,41 @@ export class Library {
     ) as { document: string } | undefined;
     if (!row) throw new DomainError("书籍不存在", "not_found");
     return JSON.parse(row.document);
+  }
+  saveImportedBook(book: Book, images: ImportedImage[], existingId?: string) {
+    return this.native.transaction(() => {
+      const saved = existingId ? this.book(existingId) : this.addBook(book);
+      if (existingId) {
+        assert(
+          saved.chapters.length === book.chapters.length &&
+            saved.chapters.every((chapter, index) =>
+              chapterText(chapter) === chapterText(book.chapters[index])),
+          "EPUB 正文与现有书籍不一致，请选择原来的文件",
+        );
+        assert(images.length, "这份 EPUB 没有可导入的图片");
+        this.native.prepare("DELETE FROM book_images WHERE book_id = ?").run(saved.id);
+      }
+      const chapterIds = new Map(book.chapters.map((chapter, index) =>
+        [chapter.id, saved.chapters[index].id]));
+      const insert = this.native.prepare(
+        "INSERT INTO book_images (id, book_id, chapter_id, before_paragraph, inline_offset, alt, mime, bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      );
+      for (const image of images) {
+        insert.run(randomUUID(), saved.id, chapterIds.get(image.chapterId),
+          image.beforeParagraph, image.inlineOffset, image.alt, image.mime, Buffer.from(image.bytes));
+      }
+      return saved;
+    })();
+  }
+  bookImages(bookId: string) {
+    return this.native.prepare(
+      "SELECT id, chapter_id AS chapterId, before_paragraph AS beforeParagraph, inline_offset AS inlineOffset, alt FROM book_images WHERE book_id = ? ORDER BY rowid",
+    ).all(bookId) as BookImage[];
+  }
+  bookImage(imageId: string) {
+    return this.native.prepare(
+      "SELECT mime, bytes FROM book_images JOIN books ON books.id = book_images.book_id WHERE book_images.id = ? AND books.deleted = 0",
+    ).get(imageId) as { mime: string; bytes: Buffer } | undefined;
   }
   books() {
     return (

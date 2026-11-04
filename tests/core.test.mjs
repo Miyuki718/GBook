@@ -27,3 +27,31 @@ test('TXT/Markdown encodings, EPUB spine and malicious archive limits',()=>{
  const excessive=zipSync({...entries,...Object.fromEntries(Array.from({length:26},(_,i)=>[`OEBPS/image-${i}.jpg`,new Uint8Array(8_000_000)]))});
  assert.throws(()=>importBook('archive-budget.epub',excessive),/解压后过大/);
 });
+
+test('EPUB illustrations preserve text anchors and reject a different edition', t => {
+  const lib = fixture(t);
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9XcAAAAASUVORK5CYII=', 'base64');
+  const archive = zipSync({
+    'META-INF/container.xml': strToU8('<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>'),
+    'book.opf': strToU8('<package><manifest><item id="chapter" href="text/one.xhtml"/></manifest><spine><itemref idref="chapter"/></spine></package>'),
+    'text/one.xhtml': strToU8('<html><body><p>段<img src="../art/pixel.png"/>落甲</p><img src="../art/pixel.png" alt="示意图"/><img src="https://example.com/no.png"/><svg><image xlink:href="../art/pixel.png"/></svg><p>段落乙</p></body></html>'),
+    'art/pixel.png': png,
+  });
+  const book = importBook('test.epub', archive);
+  const saved = lib.addBook(book);
+  const note = lib.saveAnnotation({bookId:saved.id, chapterId:saved.chapters[0].id, start:0, end:3, exact:'段落甲'});
+  const images = [];
+  const parsed = importBook('test.epub', archive, images);
+  assert.deepEqual(parsed.chapters[0].paragraphs, ['段落甲', '段落乙']);
+  assert.equal(images.length, 3);
+  const updated = lib.saveImportedBook(parsed, images, saved.id);
+  assert.equal(updated.chapters[0].id, saved.chapters[0].id);
+  const stored = lib.bookImages(saved.id);
+  assert.deepEqual(stored.map(image => [image.beforeParagraph, image.inlineOffset]), [[0, 1], [1, null], [1, null]]);
+  assert.equal(stored[1].alt, '示意图');
+  assert.deepEqual(lib.bookImage(stored[0].id).bytes, png);
+  assert.equal(lib.annotations()[0].id, note.id);
+  parsed.chapters[0].paragraphs[0] = '另一版本';
+  assert.throws(() => lib.saveImportedBook(parsed, images, saved.id), /正文与现有书籍不一致/);
+  assert.deepEqual(lib.bookImages(saved.id), stored);
+});

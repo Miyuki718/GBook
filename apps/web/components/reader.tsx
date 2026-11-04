@@ -1,13 +1,28 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Fragment, useEffect, useRef, useState } from "react";
+import type { BookImage } from "@gbook/core/types";
 import { chapterText, type Book } from "../lib/books";
 import { anchorFromSelection, segments, type Anchor } from "../lib/anchors";
 import { useSession, type Annotation } from "./session";
 import { Discussion } from "./discussion";
+import { ChapterList } from "./chapter-list";
 
 type Pending = { anchor: Anchor; x: number; y: number };
-export function Reader({ book }: { book: Book }) {
+type ReaderTheme = "day" | "paper" | "night";
+export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
+  const router = useRouter();
+  const tocDialog = useRef<HTMLDialogElement>(null);
+  const imageFile = useRef<HTMLInputElement>(null);
+  const [addingImages, setAddingImages] = useState(false);
+  const [theme, setTheme] = useState<ReaderTheme>(() => {
+    try {
+      const saved = localStorage.getItem("gbook-reader-theme");
+      if (saved === "day" || saved === "night") return saved;
+    } catch { /* Keep the default when storage is disabled. */ }
+    return "paper";
+  });
   const {
     annotations,
     positions,
@@ -54,6 +69,35 @@ export function Reader({ book }: { book: Book }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const chapter = book.chapters[chapterIndex];
+  const illustrations = new Map<number, BookImage[]>();
+  for (const image of images) {
+    if (image.chapterId !== chapter.id) continue;
+    const group = illustrations.get(image.beforeParagraph) ?? [];
+    group.push(image);
+    illustrations.set(image.beforeParagraph, group);
+  }
+  function renderImages(index: number) {
+    return illustrations.get(index)?.filter((image) => image.inlineOffset === null).map((image) => (
+      <figure className="epub-illustration" key={image.id}>
+        <img src={`/api/images/${image.id}`} alt={image.alt || "书籍插图"} loading="lazy" draggable={false} />
+      </figure>
+    ));
+  }
+  async function addImages(file: File) {
+    setAddingImages(true);
+    try {
+      const form = new FormData();
+      form.set("bookId", book.id);
+      form.set("file", file);
+      const result = await api<{ imageCount: number }>("/api/import", form);
+      router.refresh();
+      setToast(`已补充 ${result.imageCount} 张插图`);
+    } catch (error) {
+      setToast((error as Error).message);
+    } finally {
+      setAddingImages(false);
+    }
+  }
   const text = chapterText(chapter);
   const current = annotations.filter(
     (a) => a.bookId === book.id && a.chapterId === chapter.id,
@@ -269,6 +313,7 @@ export function Reader({ book }: { book: Book }) {
   return (
     <div
       className="reader-shell"
+      data-theme={theme}
       onKeyDown={(e) => {
         if (e.key === "Escape") setPending(null);
       }}
@@ -280,6 +325,29 @@ export function Reader({ book }: { book: Book }) {
           <small>{book.author}</small>
         </div>
         <div className="reader-tools">
+          <button className="icon-button" onClick={() => tocDialog.current?.showModal()}>目录</button>
+          <select className="icon-button reader-theme" aria-label="阅读主题" value={theme}
+            onChange={(event) => {
+              const next = event.target.value as ReaderTheme;
+              setTheme(next);
+              try { localStorage.setItem("gbook-reader-theme", next); } catch { /* Optional storage. */ }
+            }}>
+            <option value="day">日间</option>
+            <option value="paper">纸色</option>
+            <option value="night">夜间</option>
+          </select>
+          {book.subtitle.startsWith("EPUB") && images.length === 0 && (
+            <>
+              <button className="icon-button" disabled={addingImages} onClick={() => imageFile.current?.click()}>
+                {addingImages ? "正在导入插图…" : "补充 EPUB 插图"}
+              </button>
+              <input ref={imageFile} type="file" accept=".epub" hidden onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void addImages(file);
+              }} />
+            </>
+          )}
           <button className="icon-button" onClick={addBookmark}>
             ＋书签
           </button>
@@ -316,17 +384,7 @@ export function Reader({ book }: { book: Book }) {
           <h2 className="rail-title">
             目录 <span>{book.chapters.length} 章</span>
           </h2>
-          {book.chapters.map((c, i) => (
-            <button
-              key={c.id}
-              className={i === chapterIndex ? "current" : ""}
-              aria-current={i === chapterIndex ? "page" : undefined}
-              onClick={() => go(i)}
-            >
-              <span>0{i + 1}　</span>
-              {c.title}
-            </button>
-          ))}
+          <ChapterList chapters={book.chapters} current={chapterIndex} onSelect={go} />
           <small>
             拖动选中正文
             <br />
@@ -391,17 +449,6 @@ export function Reader({ book }: { book: Book }) {
         </nav>
         <main className="reading-column">
           <div className="mobile-chapters">
-            <select
-              aria-label="选择章节"
-              value={chapterIndex}
-              onChange={(e) => go(Number(e.target.value))}
-            >
-              {book.chapters.map((c, i) => (
-                <option value={i} key={c.id}>
-                  {i + 1} · {c.title}
-                </option>
-              ))}
-            </select>
             <details className="mobile-library-tools">
               <summary>书内搜索与书签</summary>
               <form
@@ -479,10 +526,26 @@ export function Reader({ book }: { book: Book }) {
             {chapter.paragraphs.map((paragraph, index) => {
               const paragraphBase = base;
               base += paragraph.length + 2;
+              const inline = illustrations.get(index)?.filter((image) => image.inlineOffset !== null) ?? [];
+              const cuts = inline.map((image) => paragraphBase + image.inlineOffset!);
+              const renderInline = (offset: number) => inline
+                .filter((image) => image.inlineOffset === offset)
+                .map((image) => (
+                  <img className="epub-inline-image" key={image.id} src={`/api/images/${image.id}`}
+                    alt={image.alt || "行内插图"} loading="lazy" draggable={false} />
+                ));
+              let offset = 0;
               return (
-                <p key={chapter.id + index} data-start={paragraphBase}>
-                  {segments(paragraph, paragraphBase, current).map((s, i) =>
-                    s.ids.length ? (
+                <Fragment key={chapter.id + index}>
+                {renderImages(index)}
+                <p data-start={paragraphBase}>
+                  {segments(paragraph, paragraphBase, current, cuts).map((s, i) => {
+                    const before = offset;
+                    offset += s.text.length;
+                    return (
+                    <Fragment key={i}>
+                    {renderInline(before)}
+                    {s.ids.length ? (
                       <mark
                         key={i}
                         tabIndex={0}
@@ -509,12 +572,17 @@ export function Reader({ book }: { book: Book }) {
                       </mark>
                     ) : (
                       <span key={i}>{s.text}</span>
-                    ),
-                  )}
+                    )}
+                    </Fragment>
+                    );
+                  })}
+                  {renderInline(paragraph.length)}
                   {index < chapter.paragraphs.length - 1 ? "\n\n" : null}
                 </p>
+                </Fragment>
               );
             })}
+            {renderImages(chapter.paragraphs.length)}
           </article>
           <div className="chapter-pager">
             <button
@@ -577,6 +645,16 @@ export function Reader({ book }: { book: Book }) {
         </div>
         <span>自动保存阅读位置 · 第 {chapterIndex + 1} 章</span>
       </footer>
+      <dialog ref={tocDialog} className="toc-dialog" aria-labelledby="toc-title">
+        <div className="toc-heading">
+          <h2 id="toc-title">目录 · {book.chapters.length} 章</h2>
+          <button className="icon-button" onClick={() => tocDialog.current?.close()}>关闭目录</button>
+        </div>
+        <ChapterList chapters={book.chapters} current={chapterIndex} onSelect={(index) => {
+          tocDialog.current?.close();
+          go(index);
+        }} />
+      </dialog>
       {pending && (
         <div
           className="selection-toolbar"

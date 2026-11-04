@@ -15,6 +15,17 @@ export type Book = {
   chapters: Chapter[];
 };
 export type BookSummary = Omit<Book, "chapters"> & { chapterCount: number };
+export type BookImage = {
+  id: string;
+  chapterId: string;
+  beforeParagraph: number;
+  inlineOffset: number | null;
+  alt: string;
+};
+export type ImportedImage = Omit<BookImage, "id"> & {
+  mime: string;
+  bytes: Uint8Array;
+};
 export type Annotation = {
   id: string;
   bookId: string;
