@@ -9,10 +9,16 @@ Windows 本机运行的 Web 阅读器。阅读、划线、记录个人想法，�
 ```powershell
 npm ci --ignore-scripts
 npm run build
-npm start
+powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/create-desktop-shortcut.ps1
 ```
 
-打开 http://127.0.0.1:3000 。开发时使用 `npm run dev`。
+如果拿到的是 ZIP，请先解压到固定目录，再在解压后的项目根目录运行以上命令。首次安装依赖需要联网。以后双击桌面的 **GBook** 即可启动并打开 `http://127.0.0.1:3030/`。移动项目后，在新目录重新运行创建脚本。
+
+如果 ZIP 的 Windows 属性页显示「解除锁定」，确认下载来源后可先勾选它，再解压，以便本地 PowerShell 脚本能在 `RemoteSigned` 策略下运行。
+
+快捷方式默认使用 `%LOCALAPPDATA%\GBook`。如果以前使用了其他书库目录，在创建脚本末尾加 `-DataDirectory "你的书库目录"`，指定包含 `library.db` 的文件夹。端口冲突时可加 `-Port 3031`。路径在创建时根据当前电脑生成。
+
+也可以用 `npm start` 手动启动并打开 `http://127.0.0.1:3000`。开发时使用 `npm run dev`。
 启动器会先执行版本化 SQLite 迁移，仅在全新书库中添加三本原创示例书；随后启动只监听回环地址的 Next.js。
 请只启动一个使用同一数据目录的 Web 实例。
 

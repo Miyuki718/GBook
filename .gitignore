@@ -17,3 +17,5 @@ test-results/
 *.mobi
 *.azw*
 *.backup.json
+*.lnk
+/GBook-Windows.zip
