@@ -1,5 +1,6 @@
 import { getLibrary, DomainError } from "@gbook/core";
 import { guard, jsonBody, errorResponse } from "../../../lib/security";
+import { ownerMode } from "../../../lib/owner-session";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
       case "book.update":
         return Response.json(lib.updateBook(body.value));
       case "progress.save":
-        return Response.json(lib.position(body.value));
+        return Response.json(lib.position(body.value, ownerMode()));
       case "bookmark.add":
         return Response.json(lib.bookmark(body.value));
       case "bookmark.delete":

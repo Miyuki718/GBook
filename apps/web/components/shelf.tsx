@@ -10,6 +10,7 @@ export function Shelf() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [removed, setRemoved] = useState<string | null>(null);
+  const [editError, setEditError] = useState("");
   const [editingBook, setEditingBook] = useState<{
     id: string;
     title: string;
@@ -57,7 +58,7 @@ export function Shelf() {
       <aside className="shelf-nav">
         <Link className="brand" href="/">
           g<span>book</span>
-          <i>✳</i>
+          <span className="brand-dot" aria-hidden="true" />
         </Link>
         <div className="nav-caption">我的阅读空间</div>
         <button
@@ -89,32 +90,17 @@ export function Shelf() {
       </aside>
       <main className="shelf-main">
         <header className="shelf-top">
-          <span>给思考留一点空间</span>
-          <div className="action-row">
+          <span className="shelf-context">个人阅读空间</span>
+          <Link className="brand mobile-shelf-brand" href="/">gbook<span className="brand-dot" aria-hidden="true" /></Link>
+          <nav className="action-row" aria-label="书架工具">
             <Link href="/notes">全部批注</Link>
-            <Link href="/settings">连接与数据</Link>
-            <span className="avatar">我</span>
-          </div>
+            <Link href="/settings">设置</Link>
+          </nav>
         </header>
-        <section className="welcome">
-          <div>
-            <p className="eyebrow">A LITTLE SPACE FOR YOUR MIND</p>
-            <h1>今天，读慢一点。</h1>
-            <p className="welcome-copy">翻开一本书，让想法在字里行间生长。</p>
-          </div>
-          <div className="welcome-art" aria-hidden="true">
-            <span>读</span>
-            <i>✳</i>
-            <div />
-          </div>
-        </section>
         <section aria-label="我的书架">
           <div className="section-heading">
             <div>
-              <h2>
-                我的书架 <span>{books.length}</span>
-              </h2>
-              <p>那些读过的、正在读的、想再读一遍的。</p>
+              <h1>我的书架 <span>{books.length} 本</span></h1>
             </div>
             <label className="search">
               <span aria-hidden="true">⌕</span>
@@ -184,9 +170,6 @@ export function Shelf() {
                     </div>
                     <div className="cover-title">{b.title}</div>
                     <div className="cover-subtitle">{b.subtitle}</div>
-                    <div className="cover-motif" aria-hidden="true">
-                      {b.motif}
-                    </div>
                     <div className="cover-bottom">
                       {b.author} <span>✳</span>
                     </div>
@@ -222,9 +205,9 @@ export function Shelf() {
                         description: b.description,
                       })
                     }
-                    aria-label={`编辑书籍 ${b.title}`}
+                    aria-label={`修改书名 ${b.title}`}
                   >
-                    编辑信息
+                    修改书名
                   </button>
                   <button
                     className="remove-book"
@@ -258,26 +241,36 @@ export function Shelf() {
         ref={editor}
         className="annotation-dialog"
         aria-label="编辑书籍信息"
-        onClose={() => setEditingBook(null)}
+        onClose={() => {
+          setEditingBook(null);
+          setEditError("");
+        }}
       >
         <form
           className="dialog-body"
           onSubmit={async (e) => {
             e.preventDefault();
+            if (!editingBook) return;
+            const title = editingBook.title.trim();
+            if (!title) {
+              setEditError("请输入书名");
+              return;
+            }
+            setEditError("");
             try {
               await api("/api/library", {
                 op: "book.update",
-                value: editingBook,
+                value: { ...editingBook, title },
               });
               await refresh();
               editor.current?.close();
-              setMessage("书籍信息已保存");
+              setMessage("书名已保存");
             } catch (e) {
-              setMessage((e as Error).message);
+              setEditError((e as Error).message);
             }
           }}
         >
-          <h2 className="field-label">编辑书籍信息</h2>
+          <h2 className="field-label">修改书名与书籍信息</h2>
           <label className="field-label">
             书名
             <input
@@ -319,6 +312,7 @@ export function Shelf() {
               )
             }
           />
+          {editError && <p className="error-text" role="alert">{editError}</p>}
           <div className="dialog-footer">
             <button type="button" onClick={() => editor.current?.close()}>
               取消

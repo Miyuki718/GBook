@@ -1,5 +1,7 @@
 import { randomBytes, createHmac, timingSafeEqual } from "node:crypto";
 import { DomainError } from "@gbook/core";
+import { hasOwnerSession, ownerMode } from "./owner-session";
+import { allowedOrigin, ownerServeHost } from "./request-origin";
 const shared = globalThis as typeof globalThis & {
   gbookSessionSecret?: Buffer;
 };
@@ -11,26 +13,25 @@ function equal(a: string, b: string) {
     a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b))
   );
 }
-export function guard(request: Request, mutation = false) {
-  const url = new URL(request.url),
-    host = request.headers.get("host");
-  // Next may normalize request.url to localhost even when the actual Host is 127.0.0.1.
-  if (
-    !host ||
-    !/^(127\.0\.0\.1|localhost):\d{1,5}$/.test(host) ||
-    host.split(":")[1] !== url.port
-  )
-    throw new DomainError("禁止非本机请求", "forbidden");
-  const expectedOrigin = `${url.protocol}//${host}`;
+export function guardOrigin(request: Request, mutation = false) {
+  const expectedOrigin = allowedOrigin(request);
+  if (!expectedOrigin)
+    throw new DomainError("请使用 GBook 配置的访问地址", "forbidden");
   const origin = request.headers.get("origin");
   if (
     (origin && origin !== expectedOrigin) ||
     request.headers.get("sec-fetch-site") === "cross-site"
   )
     throw new DomainError("请求来源不匹配", "forbidden");
+  if (mutation && origin !== expectedOrigin)
+    throw new DomainError("缺少同源校验", "forbidden");
+  return expectedOrigin;
+}
+export function guard(request: Request, mutation = false) {
+  guardOrigin(request, mutation);
+  if (ownerMode() && !hasOwnerSession(request))
+    throw new DomainError("请先登录 GBook", "forbidden");
   if (mutation) {
-    if (origin !== expectedOrigin)
-      throw new DomainError("缺少同源校验", "forbidden");
     const token = readCookie(request);
     const csrf = request.headers.get("x-gbook-csrf") || "";
     if (!token || !equal(csrf, sign("csrf:" + token)))
@@ -50,7 +51,7 @@ export function sessionHeaders(request: Request) {
   const token = readCookie(request) || randomBytes(24).toString("hex");
   return {
     csrf: sign("csrf:" + token),
-    cookie: `gbook_session=${token}.${sign(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400`,
+    cookie: `gbook_session=${token}.${sign(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400${ownerServeHost() ? "; Secure" : ""}`,
   };
 }
 export async function readLimited(request: Request, limit = 12_000_000) {
@@ -87,9 +88,9 @@ export function errorResponse(error: unknown) {
   const domain =
     error instanceof Error &&
     "code" in error &&
-    ["invalid_request", "not_found", "forbidden"].includes(String(error.code));
+    ["invalid_request", "not_found", "forbidden", "progress_conflict"].includes(String(error.code));
   const code = domain ? String(error.code) : "invalid_request";
-  const status = code === "forbidden" ? 403 : code === "not_found" ? 404 : 400;
+  const status = code === "forbidden" ? 403 : code === "not_found" ? 404 : code === "progress_conflict" ? 409 : 400;
   const message = domain
     ? error.message
     : typeof error === "object" && error && "issues" in error

@@ -261,22 +261,31 @@ export class Library {
     );
     this.db.run(sql`DELETE FROM annotations WHERE id=${annotationId}`);
   }
-  position(input: unknown) {
+  position(input: unknown, checkRevision = false) {
     const p = z
       .object({
         bookId: id,
         chapterId: id,
         offset: z.number().int().min(0),
         percent: z.number().min(0).max(100),
+        revision: z.number().int().min(0).optional(),
       })
       .parse(input);
     const b = this.book(p.bookId),
       c = b.chapters.find((c) => c.id === p.chapterId);
     assert(c && p.offset <= chapterText(c).length, "无效阅读位置");
-    this.db.run(
-      sql`INSERT INTO positions(book_id,document) VALUES(${p.bookId},${JSON.stringify(p)}) ON CONFLICT(book_id) DO UPDATE SET document=excluded.document`,
-    );
-    return p;
+    return this.native.transaction(() => {
+      const row = this.db.get(sql`SELECT document FROM positions WHERE book_id=${p.bookId}`) as { document: string } | undefined;
+      const revision = row ? (JSON.parse(row.document) as Position).revision ?? 0 : 0;
+      if (checkRevision && p.revision !== revision) {
+        throw new DomainError("另一台设备已更新阅读进度，请载入最新位置。", "progress_conflict");
+      }
+      const saved = { ...p, revision: revision + 1 };
+      this.db.run(
+        sql`INSERT INTO positions(book_id,document) VALUES(${p.bookId},${JSON.stringify(saved)}) ON CONFLICT(book_id) DO UPDATE SET document=excluded.document`,
+      );
+      return saved;
+    }).immediate();
   }
   positions() {
     return Object.fromEntries(

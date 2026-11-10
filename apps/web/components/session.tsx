@@ -9,13 +9,19 @@ import {
 } from "react";
 import type { Snapshot, Annotation, Position } from "@gbook/core/types";
 export type { Annotation } from "@gbook/core/types";
-type Session = Snapshot & {
+type SessionSnapshot = Snapshot & {
+  ownerPreview: boolean;
+  privateHttps: boolean;
+  formalLibrary: boolean;
+  chatGPTAvailable: boolean;
+};
+type Session = SessionSnapshot & {
   loaded: boolean;
   error: string;
   refresh: () => Promise<void>;
   api: <T = unknown>(url: string, body?: unknown) => Promise<T>;
   saveAnnotation: (input: unknown) => Promise<Annotation>;
-  savePosition: (p: Position) => Promise<void>;
+  savePosition: (p: Position) => Promise<Position>;
 };
 const Context = createContext<Session | null>(null);
 const empty: Snapshot = {
@@ -26,12 +32,16 @@ const empty: Snapshot = {
   bookmarks: [],
 };
 export function SessionProvider({ children }: { children: React.ReactNode }) {
-  const [snapshot, setSnapshot] = useState<Snapshot>(empty),
+  const [snapshot, setSnapshot] = useState<SessionSnapshot>({ ...empty, ownerPreview: false, privateHttps: false, formalLibrary: false, chatGPTAvailable: false }),
     [loaded, setLoaded] = useState(false),
     [error, setError] = useState("");
   const csrf = useRef("");
   const refresh = useCallback(async () => {
     const response = await fetch("/api/state", { cache: "no-store" });
+    if (response.status === 401) {
+      if (location.pathname !== "/login") location.replace("/login");
+      return;
+    }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "无法读取本地书库");
     csrf.current = data.csrf;
@@ -56,12 +66,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           body === undefined ? undefined : isForm ? body : JSON.stringify(body),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "操作失败");
+      if (!response.ok) throw Object.assign(new Error(data.error || "操作失败"), { status: response.status });
       return data;
     },
     [refresh],
   );
   useEffect(() => {
+    if (location.pathname === "/login") return;
     refresh().catch((e) => setError(e.message));
     const timer = setInterval(() => {
       if (document.visibilityState === "visible")
@@ -82,12 +93,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   );
   const savePosition = useCallback(
     async (p: Position) => {
-      await api("/api/library", { op: "progress.save", value: p });
+      const saved = await api<Position>("/api/library", { op: "progress.save", value: p });
       setSnapshot((s) => ({
         ...s,
-        positions: { ...s.positions, [p.bookId]: p },
+        positions: { ...s.positions, [p.bookId]: saved },
         progress: { ...s.progress, [p.bookId]: p.percent },
       }));
+      return saved;
     },
     [api],
   );

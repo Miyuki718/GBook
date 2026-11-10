@@ -13,6 +13,9 @@ type Pending = { anchor: Anchor; x: number; y: number };
 type ReaderTheme = "day" | "paper" | "night";
 export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
   const router = useRouter();
+  const [panel, setPanel] = useState<"目录" | "书签" | "批注" | "搜索" | "外观">("目录");
+  const [recordQuery, setRecordQuery] = useState("");
+  const [searched, setSearched] = useState(false);
   const tocDialog = useRef<HTMLDialogElement>(null);
   const imageFile = useRef<HTMLInputElement>(null);
   const [addingImages, setAddingImages] = useState(false);
@@ -26,6 +29,8 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
   const {
     annotations,
     positions,
+    ownerPreview,
+    chatGPTAvailable,
     bookmarks,
     api,
     refresh,
@@ -45,7 +50,6 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
     ),
   );
   const [fontSize, setFontSize] = useState(19);
-  const [showNotes, setShowNotes] = useState(true);
   const [pending, setPending] = useState<Pending | null>(null);
   const [editing, setEditing] = useState<{
     anchor: Anchor;
@@ -65,10 +69,16 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
     }[]
   >([]);
   const locationOffset = useRef(0);
+  const positionRevision = useRef(positions[book.id]?.revision ?? 0);
+  const lastPosition = useRef(positions[book.id]);
+  const pendingPosition = useRef(Promise.resolve());
+  const conflict = useRef(false);
+  const [positionConflict, setPositionConflict] = useState(false);
   const article = useRef<HTMLElement>(null);
   const dialog = useRef<HTMLDialogElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const chapter = book.chapters[chapterIndex];
+  const lastChapter = useRef(chapter.id);
   const illustrations = new Map<number, BookImage[]>();
   for (const image of images) {
     if (image.chapterId !== chapter.id) continue;
@@ -133,7 +143,23 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
             100,
         ),
       };
-      savePosition(p).catch((e) => setToast(e.message));
+      pendingPosition.current = pendingPosition.current.then(async () => {
+        if (conflict.current) return;
+        if (ownerPreview && lastPosition.current?.chapterId === p.chapterId &&
+          lastPosition.current.offset === p.offset) return;
+        try {
+          const saved = await savePosition(ownerPreview ? { ...p, revision: positionRevision.current } : p);
+          positionRevision.current = saved.revision ?? 0;
+          lastPosition.current = saved;
+        } catch (error) {
+          const failure = error as Error & { status?: number };
+          if (ownerPreview && failure.status === 409) {
+            conflict.current = true;
+            setPositionConflict(true);
+          }
+          setToast(failure.message);
+        }
+      });
     };
     const scroll = () => {
       clearTimeout(timer);
@@ -143,13 +169,14 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
       if (visible) locationOffset.current = Number(visible.dataset.start);
       timer = setTimeout(persist, 500);
     };
-    persist();
+    if (!ownerPreview || lastChapter.current !== chapter.id) persist();
+    lastChapter.current = chapter.id;
     window.addEventListener("scroll", scroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", scroll);
       clearTimeout(timer);
     };
-  }, [book.id, chapter.id, savePosition]);
+  }, [book.id, chapter.id, savePosition, ownerPreview]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 3000);
@@ -309,6 +336,20 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
       openSaved(found);
     }
   }, [book.id]);
+  function openPanel(section: typeof panel) {
+    setRecordQuery("");
+    setPanel(section);
+    tocDialog.current?.showModal();
+  }
+  function jumpFromPanel(chapterId: string, offset: number) {
+    tocDialog.current?.close();
+    jump(chapterId, offset);
+  }
+  const chapterNames = new Map(book.chapters.map((item) => [item.id, item.title]));
+  const matchesRecord = (...values: (string | undefined)[]) =>
+    values.join(" ").toLowerCase().includes(recordQuery.trim().toLowerCase());
+  const savedBookmarks = bookmarks.filter((item) => item.bookId === book.id);
+  const savedNotes = annotations.filter((item) => item.bookId === book.id);
   let base = 0;
   return (
     <div
@@ -325,7 +366,9 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
           <small>{book.author}</small>
         </div>
         <div className="reader-tools">
-          <button className="icon-button" onClick={() => tocDialog.current?.showModal()}>目录</button>
+          <button className="icon-button desktop-reader-action" onClick={() => openPanel("目录")}>阅读导航</button>
+          <button className="icon-button" onClick={addBookmark}>＋书签</button>
+          <button className="icon-button" onClick={() => openPanel("外观")}>Aa</button>
           <select className="icon-button reader-theme" aria-label="阅读主题" value={theme}
             onChange={(event) => {
               const next = event.target.value as ReaderTheme;
@@ -336,179 +379,22 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
             <option value="paper">纸色</option>
             <option value="night">夜间</option>
           </select>
-          {book.subtitle.startsWith("EPUB") && images.length === 0 && (
-            <>
-              <button className="icon-button" disabled={addingImages} onClick={() => imageFile.current?.click()}>
-                {addingImages ? "正在导入插图…" : "补充 EPUB 插图"}
-              </button>
-              <input ref={imageFile} type="file" accept=".epub" hidden onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (file) void addImages(file);
-              }} />
-            </>
-          )}
-          <button className="icon-button" onClick={addBookmark}>
-            ＋书签
-          </button>
-          <Link className="icon-button" href="/settings">
-            连接
-          </Link>
-          <button
-            className="icon-button"
-            aria-label="缩小字号"
-            disabled={fontSize <= 16}
-            onClick={() => setFontSize((n) => n - 1)}
-          >
-            A−
-          </button>
-          <button
-            className="icon-button"
-            aria-label="放大字号"
-            disabled={fontSize >= 26}
-            onClick={() => setFontSize((n) => n + 1)}
-          >
-            A+
-          </button>
-          <button
-            className="icon-button"
-            aria-expanded={showNotes}
-            onClick={() => setShowNotes((v) => !v)}
-          >
-            批注 {current.length}
-          </button>
         </div>
       </header>
-      <div className={`reader-grid ${showNotes ? "" : "hide-notes"}`}>
+      {positionConflict && (
+        <div className="global-error" role="status">
+          另一台设备已更新进度。
+          <button onClick={() => location.assign(`/read/${book.id}`)}>载入最新位置</button>
+        </div>
+      )}
+      <div className="reader-grid">
         <nav className="chapter-nav" aria-label="章节目录">
           <h2 className="rail-title">
             目录 <span>{book.chapters.length} 章</span>
           </h2>
           <ChapterList chapters={book.chapters} current={chapterIndex} onSelect={go} />
-          <small>
-            拖动选中正文
-            <br />
-            留下一条属于你的批注。
-          </small>
-          <form
-            className="book-search"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              try {
-                setResults(
-                  await api(
-                    `/api/library?bookId=${book.id}&q=${encodeURIComponent(search)}`,
-                  ),
-                );
-              } catch (e) {
-                setToast((e as Error).message);
-              }
-            }}
-          >
-            <input
-              aria-label="搜索书内正文"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              maxLength={200}
-              placeholder="搜索本书…"
-            />
-            <button type="submit" disabled={!search.trim()}>
-              查找
-            </button>
-          </form>
-          <div className="search-results">
-            {results.map((r, i) => (
-              <button key={i} onClick={() => jump(r.chapterId, r.start)}>
-                {r.chapterTitle}
-                <small>{r.excerpt}</small>
-              </button>
-            ))}
-          </div>
-          <h2 className="rail-title">书签</h2>
-          {bookmarks
-            .filter((b) => b.bookId === book.id)
-            .map((b) => (
-              <div className="bookmark-row" key={b.id}>
-                <button onClick={() => jump(b.chapterId, b.offset)}>
-                  {b.label}
-                </button>
-                <button
-                  aria-label={`删除书签 ${b.label}`}
-                  onClick={async () => {
-                    await api("/api/library", {
-                      op: "bookmark.delete",
-                      id: b.id,
-                    });
-                    await refresh();
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
         </nav>
         <main className="reading-column">
-          <div className="mobile-chapters">
-            <details className="mobile-library-tools">
-              <summary>书内搜索与书签</summary>
-              <form
-                className="book-search"
-                onSubmit={async (e) => {
-                  e.preventDefault();
-                  try {
-                    setResults(
-                      await api(
-                        `/api/library?bookId=${book.id}&q=${encodeURIComponent(search)}`,
-                      ),
-                    );
-                  } catch (e) {
-                    setToast((e as Error).message);
-                  }
-                }}
-              >
-                <input
-                  aria-label="手机书内搜索"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  maxLength={200}
-                  placeholder="搜索本书…"
-                />
-                <button type="submit" disabled={!search.trim()}>
-                  查找
-                </button>
-              </form>
-              {results.map((r, i) => (
-                <button
-                  className="annotation-card"
-                  key={i}
-                  onClick={() => jump(r.chapterId, r.start)}
-                >
-                  {r.chapterTitle} · {r.excerpt}
-                </button>
-              ))}
-              {bookmarks
-                .filter((b) => b.bookId === book.id)
-                .map((b) => (
-                  <div className="bookmark-row" key={b.id}>
-                    <button onClick={() => jump(b.chapterId, b.offset)}>
-                      {b.label}
-                    </button>
-                    <button
-                      aria-label={`移除书签 ${b.label}`}
-                      onClick={async () => {
-                        await api("/api/library", {
-                          op: "bookmark.delete",
-                          id: b.id,
-                        });
-                        await refresh();
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-            </details>
-          </div>
           <p className="chapter-kicker">
             CHAPTER {String(chapterIndex + 1).padStart(2, "0")}
           </p>
@@ -602,13 +488,12 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
             </button>
           </div>
         </main>
-        {showNotes && (
           <aside className="annotation-rail" aria-label="本章批注">
             <h2 className="rail-title">
               字里行间 <span>{current.length}</span>
             </h2>
             <p className="session-notice">
-              批注与讨论保存在本机。<Link href="/notes">查看全部批注 →</Link>
+              <button onClick={() => openPanel("批注")}>查看本书全部批注 →</button>
             </p>
             {current.length === 0 ? (
               <div className="empty-state">
@@ -634,7 +519,6 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
               ))
             )}
           </aside>
-        )}
       </div>
       <footer className="reader-bottom">
         <span>
@@ -645,15 +529,133 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
         </div>
         <span>自动保存阅读位置 · 第 {chapterIndex + 1} 章</span>
       </footer>
-      <dialog ref={tocDialog} className="toc-dialog" aria-labelledby="toc-title">
+      <nav className="reader-mobile-nav" aria-label="移动阅读工具">
+        {(["目录", "书签", "批注", "搜索"] as const).map((item) => (
+          <button key={item} onClick={() => openPanel(item)}>{item}</button>
+        ))}
+      </nav>
+      <dialog ref={tocDialog} className="toc-dialog reader-panel" aria-labelledby="toc-title">
         <div className="toc-heading">
-          <h2 id="toc-title">目录 · {book.chapters.length} 章</h2>
-          <button className="icon-button" onClick={() => tocDialog.current?.close()}>关闭目录</button>
+          <h2 id="toc-title">阅读导航</h2>
+          <button className="icon-button" onClick={() => tocDialog.current?.close()}>关闭</button>
         </div>
-        <ChapterList chapters={book.chapters} current={chapterIndex} onSelect={(index) => {
-          tocDialog.current?.close();
-          go(index);
-        }} />
+        <div className="reader-panel-tabs" role="group" aria-label="阅读导航分类">
+          {(["目录", "书签", "批注", "搜索", "外观"] as const).map((item) => (
+            <button key={item} aria-pressed={panel === item} onClick={() => {
+              setPanel(item);
+              setRecordQuery("");
+            }}>{item}</button>
+          ))}
+        </div>
+        <div className="reader-panel-content" key={panel}>
+          {panel === "目录" && (
+            <ChapterList chapters={book.chapters} current={chapterIndex} onSelect={(index) => {
+              tocDialog.current?.close();
+              go(index);
+            }} />
+          )}
+          {(panel === "书签" || panel === "批注") && (
+            <>
+              <input className="reader-panel-input" type="search" aria-label={`筛选${panel}`}
+                placeholder={panel === "书签" ? "按书签或章节名称筛选" : "按批注、原文或章节筛选"}
+                value={recordQuery} onChange={(event) => setRecordQuery(event.target.value)} />
+              {panel === "书签" ? (
+                <>
+                  <button className="icon-button panel-add-bookmark" onClick={async () => {
+                    tocDialog.current?.close();
+                    await addBookmark();
+                  }}>＋ 添加当前位置</button>
+                  {savedBookmarks.filter((item) => matchesRecord(item.label, chapterNames.get(item.chapterId))).map((item) => (
+                    <div className="reader-record" key={item.id}>
+                      <button onClick={() => jumpFromPanel(item.chapterId, item.offset)}>
+                        <strong>{item.label}</strong><small>{chapterNames.get(item.chapterId)} · 跳转</small>
+                      </button>
+                      <button className="icon-button" aria-label={`删除书签 ${item.label}`} onClick={async () => {
+                        try { await api("/api/library", { op: "bookmark.delete", id: item.id }); await refresh(); }
+                        catch (error) { setToast((error as Error).message); }
+                      }}>删除</button>
+                    </div>
+                  ))}
+                  {!savedBookmarks.some((item) => matchesRecord(item.label, chapterNames.get(item.chapterId))) &&
+                    <p className="reader-panel-empty">{recordQuery ? "没有匹配的书签" : "还没有书签，点上方按钮添加。"}</p>}
+                </>
+              ) : (
+                <>
+                  {savedNotes.filter((item) => matchesRecord(item.note, item.exact, chapterNames.get(item.chapterId))).map((item) => (
+                    <div className="reader-record" key={item.id}>
+                      <button onClick={() => jumpFromPanel(item.chapterId, item.start)}>
+                        <strong>{item.note || "高亮"}</strong><small>{item.exact}</small>
+                        <small>{chapterNames.get(item.chapterId)} · 跳转</small>
+                      </button>
+                      <button className="icon-button" onClick={() => {
+                        jumpFromPanel(item.chapterId, item.start);
+                        openSaved(item);
+                      }}>编辑</button>
+                    </div>
+                  ))}
+                  {!savedNotes.some((item) => matchesRecord(item.note, item.exact, chapterNames.get(item.chapterId))) &&
+                    <p className="reader-panel-empty">{recordQuery ? "没有匹配的批注" : "长按或选中正文，可以高亮和写批注。"}</p>}
+                </>
+              )}
+            </>
+          )}
+          {panel === "搜索" && (
+            <>
+              <form className="book-search" onSubmit={async (event) => {
+                event.preventDefault();
+                if (!search.trim()) return;
+                try {
+                  setResults(await api(`/api/library?bookId=${book.id}&q=${encodeURIComponent(search.trim())}`));
+                  setSearched(true);
+                } catch (error) { setToast((error as Error).message); }
+              }}>
+                <input type="search" aria-label="搜索书内正文" maxLength={200}
+                  value={search} placeholder="输入要找的正文…" onChange={(event) => {
+                    setSearch(event.target.value);
+                    setSearched(false);
+                    setResults([]);
+                  }} />
+                <button className="icon-button" type="submit" disabled={!search.trim()}>查找</button>
+              </form>
+              {results.map((item, index) => (
+                <button className="annotation-card" key={index} onClick={() => jumpFromPanel(item.chapterId, item.start)}>
+                  <strong>{item.chapterTitle}</strong><p>{item.excerpt}</p>
+                </button>
+              ))}
+              {searched && !results.length && <p className="reader-panel-empty">没有找到匹配正文。</p>}
+            </>
+          )}
+          {panel === "外观" && <div className="reader-appearance">
+          {book.subtitle.startsWith("EPUB") && images.length === 0 && (
+            <>
+              <button className="icon-button" disabled={addingImages} onClick={() => imageFile.current?.click()}>
+                {addingImages ? "正在导入插图…" : "补充 EPUB 插图"}
+              </button>
+              <input ref={imageFile} type="file" accept=".epub" hidden onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void addImages(file);
+              }} />
+            </>
+          )}
+          <button
+            className="icon-button"
+            aria-label="缩小字号"
+            disabled={fontSize <= 16}
+            onClick={() => setFontSize((n) => n - 1)}
+          >
+            A−
+          </button>
+          <button
+            className="icon-button"
+            aria-label="放大字号"
+            disabled={fontSize >= 26}
+            onClick={() => setFontSize((n) => n + 1)}
+          >
+            A+
+          </button>
+          </div>}
+        </div>
       </dialog>
       {pending && (
         <div
@@ -723,7 +725,7 @@ export function Reader({ book, images }: { book: Book; images: BookImage[] }) {
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
-          {editing && (
+          {editing && chatGPTAvailable && (
             <Discussion
               annotation={annotations.find((a) => a.id === editing.id)}
               ensureSaved={ensureSaved}

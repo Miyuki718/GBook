@@ -53,6 +53,7 @@ export type Message = {
   requestId: string;
 };
 export type Position = {
+  revision?: number;
   bookId: string;
   chapterId: string;
   offset: number;

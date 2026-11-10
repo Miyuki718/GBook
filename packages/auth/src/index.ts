@@ -11,7 +11,7 @@ import { credentialEncryption } from "./dpapi.mjs";
 const state = globalThis as typeof globalThis & { gbookAuth?: ChatGPTClient };
 export function getAuth(): ChatGPTClient {
   if (state.gbookAuth) return state.gbookAuth;
-  const storageDir = join(dataDirectory(), "auth");
+  const storageDir = join(process.env.GBOOK_AUTH_DATA_DIR || dataDirectory(), "auth");
   mkdirSync(storageDir, { recursive: true });
   if (process.platform === "win32") {
     const sid = spawnSync("whoami.exe", ["/user", "/fo", "csv", "/nh"], {

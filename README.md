@@ -34,7 +34,7 @@ powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -File scripts/create-des
 - MCP：独立 TypeScript STDIO Server，共享同一业务层和数据库，默认只读，写入需显式开启。
 - 工程：严格 TypeScript、自动化核心/导入/STDIO/HTTP 测试、Windows CI 配置、许可证说明。
 
-真实 AI 需要在“连接与数据”中完成 OpenAI 授权，并具有可用套餐权限/额度。应用不读取 ChatGPT 历史聊天或 Memory。
+首次使用 AI，请在 Windows 本机打开「设置 → 连接与数据」，点 **Continue with ChatGPT**，在浏览器中用自己的账号登录，并授予套餐使用权限。能使用的模型和额度取决于账号及 OpenAI 的授权结果。连接后，在阅读页选中文字、点「写批注」，选择模型并点「让 GPT 回应」。应用不读取 ChatGPT 历史聊天或 Memory。
 AI 请求只在主动点击后发送，包含选中原文、附近上下文、个人批注和本条最近讨论。无假回复、无自动计费重试。
 
 ## 数据和备份
@@ -96,7 +96,7 @@ docs/                使用说明、架构、决策与验证记录
 
 旧版导入的 EPUB 可在阅读页点「补充 EPUB 插图」，选择原文件。正文一致时保留原书籍、批注和阅读位置，并补充图片。JSON 备份包含文字及阅读记录，恢复后可用原 EPUB 补图。
 
-这是 Windows 本地单用户版本，不提供公网多用户、云同步、DRM 解密、PDF/OCR 或完整 EPUB 排版保真。阅读器只渲染提取的正文和受支持的本地图片。原书脚本、矢量 SVG 和远程资源不进入阅读页。
+这是 Windows 单用户版本，支持本机阅读及可选的私有设备访问。阅读器渲染提取的正文和受支持的本地图片。导入支持无 DRM 的 EPUB、TXT 和 Markdown。
 文件导入上限 100 MB，EPUB 解压总量上限 200 MB、单个条目上限 10 MB，解析后的正文 JSON 上限 1000 万字符；JSON 恢复上限 30 MB。大书性能取决于章节大小。
 
 自写代码为 MIT；`packages/auth/vendor/siwc` 保留 OpenAI **Noncommercial License v1.0**，不能作为 MIT 重新授权。商业用途和 OpenAI 服务接入需单独核对。
@@ -104,4 +104,4 @@ docs/                使用说明、架构、决策与验证记录
 
 ## 手机使用
 
-当前只支持 Windows 本机访问。手机可以通过远程桌面操作电脑上的 GBook；手机浏览器直接访问需要后续增加受保护的跨设备入口。步骤见 [docs/MOBILE.md](docs/MOBILE.md)。
+手机浏览器可通过自己配置的 **Tailscale Serve** 私有 HTTPS 地址访问 Windows 上的 GBook，登录后与其他设备共享同一套网页书库。电脑须保持开机。正式书库部署、备份与 AI 授权边界见 [私有访问指南](docs/CLOUD.md)。

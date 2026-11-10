@@ -1,16 +1,18 @@
 import { getAuth, authError } from "@gbook/auth";
 import { guard, jsonBody, errorResponse } from "../../../lib/security";
+import { ownerChatGPT, ownerMode } from "../../../lib/owner-session";
 export const runtime = "nodejs";
 export async function GET(request: Request) {
   try {
     guard(request);
+    if (ownerMode() && !ownerChatGPT()) return new Response(null, { status: 404 });
     const client = getAuth(),
       session = await client.getSession();
     const models = session.sharing
       ? await client.listModels({ signal: AbortSignal.timeout(30000) })
       : [];
     return Response.json(
-      { session, models },
+      { session: ownerMode() ? { status: session.status, sharing: session.sharing } : session, models },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (e) {
@@ -32,6 +34,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     guard(request, true);
+    if (ownerMode()) return new Response(null, { status: 404 });
     const { op } = await jsonBody(request),
       client = getAuth();
     if (op === "connect" || op === "enable-plan" || op === "other-account")

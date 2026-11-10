@@ -1,16 +1,18 @@
 import { getLibrary, chapterText, DomainError } from "@gbook/core";
 import { getAuth, authError } from "@gbook/auth";
 import { guard, jsonBody, errorResponse } from "../../../lib/security";
+import { ownerChatGPT, ownerMode } from "../../../lib/owner-session";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     guard(request, true);
+    if (ownerMode() && !ownerChatGPT()) return new Response(null, { status: 404 });
     const body = await jsonBody(request, 20000),
       lib = getLibrary(),
       client = getAuth();
     const state = await client.getSession();
     if (!state.sharing)
-      throw new DomainError("请在设置中连接 ChatGPT 并授权套餐使用");
+      throw new DomainError("请在 Windows 本机版的设置中连接 ChatGPT 并授权套餐使用");
     const models = await client.listModels({ signal: request.signal });
     if (!models.some((m) => m.slug === body.model))
       throw new DomainError("请选择账户可用模型");

@@ -8,7 +8,8 @@ type AuthState = {
   models: { slug: string; displayName: string }[];
 };
 export function Settings() {
-  const { api, refresh } = useSession();
+  const { api, refresh, loaded, ownerPreview, privateHttps, formalLibrary, chatGPTAvailable } = useSession();
+  const [address, setAddress] = useState("");
   const [auth, setAuth] = useState<AuthState | null>(null),
     [busy, setBusy] = useState(false),
     [message, setMessage] = useState("");
@@ -20,8 +21,31 @@ export function Settings() {
     }
   }
   useEffect(() => {
-    load();
-  }, []);
+    if (loaded && !ownerPreview) load();
+  }, [loaded, ownerPreview]);
+  useEffect(() => {
+    if (privateHttps) setAddress(window.location.origin + "/");
+  }, [privateHttps]);
+  async function refreshLibrary() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await refresh();
+      setMessage("已刷新书库和阅读记录");
+    } catch (e) {
+      setMessage((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function copyAddress() {
+    try {
+      await navigator.clipboard.writeText(address);
+      setMessage("已复制访问地址");
+    } catch {
+      setMessage("无法自动复制，请选中地址并手动复制。");
+    }
+  }
   async function connect(op: string) {
     setBusy(true);
     setMessage(
@@ -65,7 +89,34 @@ export function Settings() {
     <main className="settings-page">
       <Link href="/">‹ 返回书架</Link>
       <h1>连接与数据</h1>
-      <section className="settings-card">
+      {ownerPreview ? (
+        <section className="settings-card">
+          <h2>{formalLibrary ? "个人书库 · 正式版" : "个人书库 · 测试版"}</h2>
+          <p>{privateHttps
+            ? "通过 Tailscale 私有 HTTPS 访问。其他设备加入同一个 Tailscale 网络后，可使用同一地址和 GBook 书库密码登录。"
+            : "当前为跨设备测试书库。请使用启动时配置的访问地址。"}</p>
+          {privateHttps && address && (
+            <div className="settings-access">
+              <label htmlFor="gbook-access-address">书库访问地址</label>
+              <div className="action-row">
+                <input id="gbook-access-address" value={address} readOnly />
+                <button className="secondary-button" onClick={copyAddress}>复制地址</button>
+              </div>
+            </div>
+          )}
+          <p>登录同一书库后，各设备共享书籍、批注、书签和阅读进度。</p>
+          <p>{chatGPTAvailable
+            ? "AI 共读使用 Windows 本机授权的 ChatGPT 套餐。连接与授权请在 Windows 本机版管理。"
+            : "当前书库未开启网页 AI。"}</p>
+          <div className="action-row">
+            <button className="secondary-button" disabled={busy} onClick={refreshLibrary}>刷新书库</button>
+            <form action="/api/owner" method="post">
+              <input type="hidden" name="op" value="logout" />
+              <button className="secondary-button" type="submit">退出登录</button>
+            </form>
+          </div>
+        </section>
+      ) : loaded && <section className="settings-card">
         <h2>ChatGPT 共读</h2>
         <p>
           连接自己的 ChatGPT
@@ -134,13 +185,12 @@ export function Settings() {
           凭证在本机使用 Windows DPAPI 加密。套餐有使用限制，不读取 ChatGPT
           历史聊天或 Memory。
         </small>
-      </section>
+      </section>}
       <section className="settings-card">
         <h2>备份与恢复</h2>
-        <p>
-          导出书籍、批注、讨论、书签与阅读位置，不包含 OAuth
-          凭证。备份文件包含你的阅读内容，请自行妥善保存。
-        </p>
+        <p>{ownerPreview
+          ? "导出当前书库和阅读记录。恢复会导入新副本，请妥善保存备份文件。"
+          : "导出书籍、批注、讨论、书签与阅读位置，不包含 OAuth 凭证。备份文件包含你的阅读内容，请自行妥善保存。"}</p>
         <div className="action-row">
           <a className="primary-button" href="/api/backup" download>
             导出 JSON 备份
@@ -161,14 +211,14 @@ export function Settings() {
       </section>
       <p role="status">{message}</p>
       <Trash />
-      <section className="settings-card">
+      {loaded && !ownerPreview && <section className="settings-card">
         <h2>本地使用</h2>
         <p>
           数据默认保存在 %LOCALAPPDATA%\GBook。Web 与独立 MCP Server 共用同一
           SQLite 数据库。本版本不提供远程访问或多用户账号系统。
         </p>
         <p>DevKit 包含非商业用途许可，详见项目中的第三方许可说明。</p>
-      </section>
+      </section>}
     </main>
   );
 }
